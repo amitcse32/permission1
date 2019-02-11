@@ -1,84 +1,327 @@
-package com.cssoft.apppermissions;
-
-import android.Manifest;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.database.Cursor;
-import android.net.Uri;
-import android.provider.ContactsContract;
-import android.support.annotation.NonNull;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
-import android.view.View;
-import android.widget.ArrayAdapter;
-import android.widget.ListView;
-import android.widget.TextView;
-import android.widget.Toast;
-
-import java.util.ArrayList;
-
-public class MainActivity extends AppCompatActivity {
-
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-
-        checkPermission();
+import React, { Component } from 'react';
+import {
+  Text,
+  View,
+  Animated,
+  TextInput,
+  FlatList,
+  ViewPropTypes
+} from 'react-native';
+import PropTypes from 'prop-types';
+let lastChar='';
+export default class MentionsTextInput extends Component {
+  constructor() {
+    super();
+    this.state = {
+      textInputHeight: "",
+      isTrackingStarted: false,
+      suggestionRowHeight: new Animated.Value(0),
 
     }
+    this.isTrackingStarted = false;
+    this.previousChar = " ";
+  }
 
-    private void checkPermission() {
+  componentWillMount() {
+    this.setState({
+      textInputHeight: this.props.textInputMinHeight
+    })
+  }
 
-
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.READ_CONTACTS},
-                    101);
-        } else {
-
-
-            ArrayList<String> data=new ArrayList<>();
-
-            Cursor phones = getContentResolver().query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI, null,null,null, null);
-            while (phones.moveToNext())
-            {
-                String name=phones.getString(phones.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME));
-                String phoneNumber = phones.getString(phones.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER));
-
-                data.add(name+"\n"+phoneNumber);
-
-            }
-            phones.close();
-
-
-            ArrayAdapter<String> adapter=new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1,data);
-            ListView listView=findViewById(R.id.listView);
-            listView.setAdapter(adapter);
-
-
-
-
-        }
+  componentWillReceiveProps(nextProps) {
+    if (!nextProps.value) {
+      this.resetTextbox();
+    } else if (this.isTrackingStarted && !nextProps.horizontal && nextProps.suggestionsData.length !== 0) {
+      const numOfRows = nextProps.MaxVisibleRowCount >= nextProps.suggestionsData.length ? nextProps.suggestionsData.length : nextProps.MaxVisibleRowCount;
+      const height = numOfRows * nextProps.suggestionRowHeight;
+      this.openSuggestionsPanel(height);
     }
+  }
 
-    public void goToSettings(View view) {
-        Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-        intent.setData(Uri.parse("package:com.cssoft.apppermissions"));
-        startActivity(intent);
+  startTracking() {
+    this.isTrackingStarted = true;
+    this.openSuggestionsPanel();
+    this.setState({
+      isTrackingStarted: true
+    })
+  }
+
+  stopTracking() {
+    this.isTrackingStarted = false;
+    this.closeSuggestionsPanel();
+    this.setState({
+      isTrackingStarted: false
+    })
+  }
+
+  openSuggestionsPanel(height) {
+    Animated.timing(this.state.suggestionRowHeight, {
+      toValue: height ? height : this.props.suggestionRowHeight,
+      duration: 100,
+    }).start();
+  }
+
+  closeSuggestionsPanel() {
+    Animated.timing(this.state.suggestionRowHeight, {
+      toValue: 0,
+      duration: 100,
+    }).start();
+  }
+
+  updateSuggestions(lastKeyword) {
+    this.props.triggerCallback(lastKeyword);
+  }
+
+  identifyKeyword(val) {
+    
+    if (this.isTrackingStarted) {
+      const boundary = this.props.triggerLocation === 'new-word-only' ? 'B' : '';
+      
+       const keywordArray = lastChar;
+      // alert(keywordArray);
+        
+      if (keywordArray==='@' || lastChar==='#') {
+        const lastKeyword = keywordArray[keywordArray.length - 1];
+   
+        this.updateSuggestions(lastKeyword);
+      
+      }
     }
+  }
 
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-
-
-        if (requestCode == 101) {
-                checkPermission();
-
-        }
+  onChangeText(val) {
+    this.props.onChangeText(val); // pass changed text back
+      lastChar = val.substr(val.length - 1);
+    
+    const wordBoundry = (this.props.triggerLocation === 'new-word-only') ? this.previousChar.trim().length === 0 : true;
+     if ((lastChar === '#' || lastChar=='@') && wordBoundry) {
+      this.startTracking();
+    } else if (lastChar === ' ' && this.state.isTrackingStarted || val === "") {
+      this.stopTracking();
     }
+    this.previousChar = lastChar;
+    this.identifyKeyword(val);
+  }
+
+  resetTextbox() {
+    this.previousChar = " ";
+    this.stopTracking();
+    this.setState({ textInputHeight: this.props.textInputMinHeight });
+  }
+
+  render() {
+    return (
+      <View>
+        <Animated.View style={[{ ...this.props.suggestionsPanelStyle }, { height: this.state.suggestionRowHeight }]}>
+          <FlatList
+            keyboardShouldPersistTaps={"always"}
+            horizontal={this.props.horizontal}
+            ListEmptyComponent={this.props.loadingComponent}
+            enableEmptySections={true}
+            data={this.props.suggestionsData}
+            keyExtractor={this.props.keyExtractor}
+            renderItem={(rowData) => { return this.props.renderSuggestionsRow(rowData, this.stopTracking.bind(this)) }}
+          />
+        </Animated.View>
+        <TextInput
+          {...this.props}
+          onContentSizeChange={(event) => {
+            this.setState({
+              textInputHeight: this.props.textInputMinHeight >= event.nativeEvent.contentSize.height ? this.props.textInputMinHeight : event.nativeEvent.contentSize.height + 10,
+            });
+          }}
+          ref={component => this._textInput = component}
+          onChangeText={this.onChangeText.bind(this)}
+          multiline={true}
+          
+          value={this.props.value}
+          style={[{ ...this.props.textInputStyle }, { height: Math.min(this.props.textInputMaxHeight, this.state.textInputHeight) }]}
+          placeholder={this.props.placeholder ? this.props.placeholder : 'Write a comment...'}
+        />
+      </View>
+    )
+  }
 }
+
+MentionsTextInput.propTypes = {
+  textInputStyle: TextInput.propTypes.style,
+  suggestionsPanelStyle: ViewPropTypes.style,
+  loadingComponent: PropTypes.oneOfType([
+    PropTypes.func,
+    PropTypes.element,
+  ]),
+  textInputMinHeight: PropTypes.number,
+  textInputMaxHeight: PropTypes.number,
+  trigger: PropTypes.string.isRequired,
+  triggerLocation: PropTypes.oneOf(['new-word-only', 'anywhere']).isRequired,
+  value: PropTypes.string.isRequired,
+  onChangeText: PropTypes.func.isRequired,
+  triggerCallback: PropTypes.func.isRequired,
+  renderSuggestionsRow: PropTypes.oneOfType([
+    PropTypes.func,
+    PropTypes.element,
+  ]).isRequired,
+  suggestionsData: PropTypes.array.isRequired,
+  keyExtractor: PropTypes.func.isRequired,
+  horizontal: PropTypes.bool,
+  suggestionRowHeight: PropTypes.number.isRequired,
+  MaxVisibleRowCount: function(props, propName, componentName) {
+    if(!props.horizontal && !props.MaxVisibleRowCount) {
+      return new Error(
+        `Prop 'MaxVisibleRowCount' is required if horizontal is set to false.`
+      );
+    }
+  }
+};
+
+MentionsTextInput.defaultProps = {
+  textInputStyle: { borderColor: '#ebebeb', borderWidth: 1, fontSize: 15 },
+  suggestionsPanelStyle: { backgroundColor: 'rgba(100,100,100,0.1)' },
+  loadingComponent: () => <Text>Loading...</Text>,
+  textInputMinHeight: 30,
+  textInputMaxHeight: 80,
+  horizontal: true,
+}
+----------------------------------------------------------------------
+import React, { Component } from 'react';
+import {
+  AppRegistry,
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  ActivityIndicator,
+  Dimensions
+} from 'react-native';
+import MentionsTextInput from 'react-native-mentions';
+
+const { height, width } = Dimensions.get('window');
+export default class App extends Component {
+
+  constructor() {
+    super();
+    this.state = {
+      value: "",
+      keyword: "",
+      data: []
+    }
+    this.reqTimer = 0;
+  }
+
+  renderSuggestionsRow({ item }, hidePanel) {
+    return (
+      <TouchableOpacity onPress={() => this.onSuggestionTap(item.UserName, hidePanel)}>
+        <View style={styles.suggestionsRowContainer}>
+          <View style={styles.userIconBox}>
+            <Text style={styles.usernameInitials}>{!!item.DisplayName && item.DisplayName.substring(0, 2).toUpperCase()}</Text>
+          </View>
+          <View style={styles.userDetailsBox}>
+            <Text style={styles.displayNameText}>{item.DisplayName}</Text>
+            <Text style={styles.usernameText}>@{item.UserName}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    )
+  }
+
+  onSuggestionTap(username, hidePanel) {
+    hidePanel();
+    const comment = this.state.value.slice(0, - this.state.keyword.length)
+    this.setState({
+      data: [],
+      value: this.state.value + ""+username 
+    })
+  }
+
+
+  callback(keyword) {
+    if (this.reqTimer) {
+      clearTimeout(this.reqTimer);
+    }
+
+    // this.reqTimer = setTimeout(() => {
+    //   getUserSuggestions(keyword)
+    //     .then(data => {
+    //       this.setState({
+    //         keyword: keyword,
+    //         data: [...data]
+    //       })
+    //     })
+    //     .catch(err => {
+    //       console.log(err);
+    //     });
+    // }, 200);
+  }
+
+  render() {
+    return (
+      <View style={styles.container}>
+        <Text onPress={() => { this.setState({ value: "" }) }}>Clear textbox</Text>
+
+        <MentionsTextInput
+          textInputStyle={{ borderColor: '#ebebeb', borderWidth: 1, padding: 5, fontSize: 15 }}
+          suggestionsPanelStyle={{ backgroundColor: 'rgba(100,100,100,0.1)' }}
+          loadingComponent={() => <View style={{ flex: 1, width, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator /></View>}
+          textInputMinHeight={30}
+          textInputMaxHeight={80}
+          trigger={'@'}
+          triggerLocation={'new-word-only'} // 'new-word-only', 'anywhere'
+          value={this.state.value}
+          onChangeText={(val) => { this.setState({ ...this.state,value: val }) }}
+          triggerCallback={this.callback.bind(this)}
+          renderSuggestionsRow={this.renderSuggestionsRow.bind(this)}
+          suggestionsData={[{UserName:'amit'},{UserName:'amit111'}]} // array of objects
+          keyExtractor={(item, index) => item.UserName}
+          suggestionRowHeight={45}
+
+          horizontal={false} // defaut is true, change the orientation of the list
+          MaxVisibleRowCount={3} // this is required if horizontal={false}
+        />
+      </View>
+    );
+  }
+}
+
+const styles = StyleSheet.create({
+  container: {
+    height: 300,
+    justifyContent: 'flex-end',
+    paddingTop: 100
+  },
+  suggestionsRowContainer: {
+    flexDirection: 'row',
+  },
+  userAvatarBox: {
+    width: 35,
+    paddingTop: 2
+  },
+  userIconBox: {
+    height: 45,
+    width: 45,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#54c19c'
+  },
+  usernameInitials: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14
+  },
+  userDetailsBox: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingLeft: 10,
+    paddingRight: 15
+  },
+  displayNameText: {
+    fontSize: 13,
+    fontWeight: '500'
+  },
+  usernameText: {
+    fontSize: 12,
+    color: 'rgba(0,0,0,0.6)'
+  }
+});
+
+
+AppRegistry.registerComponent('sample', () => sampleApp);
